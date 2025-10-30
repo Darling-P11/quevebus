@@ -1,11 +1,12 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart' as gc;
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:go_router/go_router.dart';
+
+import 'package:quevebus/core/services/recents_service.dart';
 
 class SelectOnMapScreen extends StatefulWidget {
   const SelectOnMapScreen({super.key});
@@ -27,13 +28,39 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
 
   Timer? _debounce;
 
+  // extras recibidos
+  double? _initialLat;
+  double? _initialLon;
+  String? _initialLabel;
+
+  bool _readExtras = false; // evita leer varias veces
+
   @override
-  void initState() {
-    super.initState();
-    _initPosition();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Lee los extras AQUÍ (válido usar context)
+    if (_readExtras) return;
+    _readExtras = true;
+
+    final state = GoRouterState.of(context);
+    final extra = state.extra;
+    if (extra is Map) {
+      _initialLat = (extra['initialLat'] as num?)?.toDouble();
+      _initialLon = (extra['initialLon'] as num?)?.toDouble();
+      _initialLabel = extra['initialLabel'] as String?;
+    }
+
+    _initPosition(); // ahora sí, con extras leídos
   }
 
   Future<void> _initPosition() async {
+    if (_initialLat != null && _initialLon != null) {
+      _center = LatLng(_initialLat!, _initialLon!);
+      _address = _initialLabel ?? _address;
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -54,8 +81,6 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
 
     if (!mounted) return;
     setState(() => _loading = false);
-
-    // cuando el mapa esté listo moveremos y haremos reverse-geocode
   }
 
   // Llama geocoding con debounce para no saturar al mover el mapa
@@ -106,9 +131,31 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
 
   void _onMapReady() {
     _mapReady = true;
-    // Mueve al centro inicial conocido y calcula dirección
     _mapCtrl.move(_center, _initialZoom);
-    _reverseGeocodeDebounced(_center);
+    // Si vino con label de sugerencia no hacemos reverse inmediato;
+    // caso contrario, obtenemos etiqueta al terminar de mover.
+    if (_initialLabel == null) {
+      _reverseGeocodeDebounced(_center);
+    }
+  }
+
+  Future<void> _confirmSelection() async {
+    final lat = _center.latitude;
+    final lon = _center.longitude;
+
+    await RecentsService.add(
+      RecentDestination(
+        label: _initialLabel ?? _address,
+        lat: lat,
+        lon: lon,
+        at: DateTime.now(),
+      ),
+    );
+
+    final slat = lat.toStringAsFixed(6);
+    final slon = lon.toStringAsFixed(6);
+    if (!mounted) return;
+    context.go('/results?lat=$slat&lon=$slon');
   }
 
   @override
@@ -129,16 +176,17 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
                         initialCenter: _center,
                         initialZoom: _initialZoom,
                         onMapReady: _onMapReady,
-                        // Cada evento de mapa actualiza el centro y el banner
                         onMapEvent: (evt) {
                           if (!_mapReady) return;
-                          // el "pin" va en el centro del mapa
                           final newCenter = _mapCtrl.center;
                           setState(() => _center = newCenter);
 
-                          // cuando termina el gesto/animación pedimos dirección
                           if (evt is MapEventMoveEnd ||
                               evt is MapEventFlingAnimationEnd) {
+                            if (_initialLabel != null) {
+                              _initialLabel =
+                                  null; // al primer movimiento, resetea
+                            }
                             _reverseGeocodeDebounced(newCenter);
                           }
                         },
@@ -156,7 +204,6 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
                           userAgentPackageName: 'com.example.quevebus',
                           retinaMode: true,
                         ),
-                        // Marcador en el centro (tu pin “se mueve con el mapa”)
                         MarkerLayer(
                           markers: [
                             Marker(
@@ -230,7 +277,7 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _address,
+                            _initialLabel ?? _address,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Colors.black87),
@@ -258,14 +305,7 @@ class _SelectOnMapScreenState extends State<SelectOnMapScreen> {
                       borderRadius: BorderRadius.circular(28),
                     ),
                   ),
-                  // ...
-                  onPressed: () {
-                    // Navega a resultados pasando el destino seleccionado
-                    final lat = _center.latitude.toStringAsFixed(6);
-                    final lon = _center.longitude.toStringAsFixed(6);
-                    context.go('/results?lat=$lat&lon=$lon');
-                  },
-
+                  onPressed: _confirmSelection,
                   child: const Text(
                     'Seleccionar dirección',
                     style: TextStyle(fontSize: 18),

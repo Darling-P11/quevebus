@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geolocator/geolocator.dart'; // para abrir ajustes si está denegado para siempre
 import 'package:quevebus/core/services/permissions_service.dart';
 
 class PermissionsScreen extends StatefulWidget {
@@ -10,33 +11,85 @@ class PermissionsScreen extends StatefulWidget {
 }
 
 class _PermissionsScreenState extends State<PermissionsScreen> {
+  bool _checking = true; // ⬅️ para auto-saltar si ya está concedido
   bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _precheck();
+  }
+
+  Future<void> _precheck() async {
+    final st = await PermissionsService.getLocationState();
+    if (!mounted) return;
+    if (st == LocationPermState.granted) {
+      // Ya tiene permiso: no mostramos esta pantalla
+      context.go('/home');
+    } else {
+      setState(() => _checking = false);
+    }
+  }
 
   Future<void> _handleAccept() async {
     if (_loading) return;
     setState(() => _loading = true);
 
-    final ok = await PermissionsService.requestLocation();
+    final st = await PermissionsService.requestLocation();
 
     if (!mounted) return;
     setState(() => _loading = false);
 
-    if (ok) {
+    if (st == LocationPermState.granted) {
       context.go('/home');
-    } else {
-      // Feedback suave si fue denegado.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se otorgó el permiso de ubicación. Puedes activarlo luego en Ajustes.',
+      return;
+    }
+
+    if (st == LocationPermState.deniedForever) {
+      // Denegado permanentemente: sugerir ir a Ajustes
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Permiso requerido'),
+          content: const Text(
+            'Debes habilitar la ubicación desde Ajustes del sistema para usar el mapa y planificar rutas.',
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Geolocator.openAppSettings();
+              },
+              child: const Text('Abrir Ajustes'),
+            ),
+          ],
         ),
       );
+      return;
     }
+
+    // Denegado temporalmente o servicios apagados: feedback suave
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'No se otorgó el permiso de ubicación. Puedes activarlo luego en Ajustes.',
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_checking) {
+      return const Scaffold(
+        body: SafeArea(child: Center(child: CircularProgressIndicator())),
+      );
+    }
+
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -93,7 +146,7 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Botón secundario
+              // Botón secundario (nota: si tu redirect fuerza permisos, esto volverá aquí)
               TextButton(
                 onPressed: () => context.go('/home'),
                 child: const Text('Ahora no'),

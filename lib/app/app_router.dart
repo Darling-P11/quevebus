@@ -14,35 +14,50 @@ import 'package:quevebus/screen/menu/invite_friends_screen.dart';
 import 'package:quevebus/screen/menu/support_screen.dart';
 import 'package:quevebus/screen/menu/about_screen.dart';
 
+// ⬇️ Servicio para chequear el permiso real del SO
+import 'package:quevebus/core/services/permissions_service.dart';
+
 GoRouter buildRouter() {
   return GoRouter(
+    // Iniciamos en "/" (SplashScreen). El redirect decidirá a dónde ir.
     initialLocation: '/',
     routes: [
+      // SPLASH: solo pantalla visual; la redirección global decide el flujo.
       GoRoute(
         path: '/',
         name: 'splash',
         builder: (_, __) => const SplashScreen(),
       ),
+
+      // Pantalla explicativa/solicitud de permisos
       GoRoute(
         path: '/permissions',
         name: 'permissions',
         builder: (_, __) => const PermissionsScreen(),
       ),
+
+      // Home (mapa)
       GoRoute(
         path: '/home',
         name: 'home',
         builder: (_, __) => const HomeScreen(),
       ),
+
+      // Búsqueda OD
       GoRoute(
         path: '/search',
         name: 'search',
         builder: (_, __) => const SearchScreen(),
       ),
+
+      // Seleccionar en mapa
       GoRoute(
         path: '/select-on-map',
         name: 'selectOnMap',
         builder: (_, __) => const SelectOnMapScreen(),
       ),
+
+      // Resultados (acepta lat/lon por query params)
       GoRoute(
         path: '/results',
         name: 'results',
@@ -53,32 +68,67 @@ GoRouter buildRouter() {
           return RoutesResultScreen(destLat: dlat, destLon: dlon);
         },
       ),
+
+      // Itinerario (detalle)
       GoRoute(
         path: '/itinerary/:id',
         name: 'itineraryDetail',
         builder: (_, st) =>
             ItineraryDetailScreen(itineraryId: st.pathParameters['id'] ?? '1'),
       ),
+
+      // Menú: Ajustes de permisos
       GoRoute(
         path: '/menu/permissions',
         name: 'menuPermissions',
         builder: (_, __) => const PermissionsSettingsScreen(),
       ),
+
+      // Menú: Invitar amigos
       GoRoute(
         path: '/menu/invite',
         name: 'menuInvite',
         builder: (_, __) => const InviteFriendsScreen(),
       ),
+
+      // Menú: Soporte
       GoRoute(
         path: '/menu/support',
         name: 'menuSupport',
         builder: (_, __) => const SupportScreen(),
       ),
+
+      // Menú: Acerca de
       GoRoute(
         path: '/menu/about',
         name: 'menuAbout',
         builder: (_, __) => const AboutScreen(),
       ),
     ],
+
+    // ⬇️ Redirección global:
+    // - Si el permiso de ubicación YA está concedido ⇒ no mostramos /permissions.
+    // - Si NO está concedido ⇒ enviamos a /permissions (salvo que ya estemos ahí).
+    redirect: (context, state) async {
+      final path = state.uri.path;
+
+      // Evita loops: si ya estamos en /permissions, no redirigir.
+      if (path == '/permissions') return null;
+
+      // Consultamos el estado real del permiso/servicio
+      final perm = await PermissionsService.getLocationState();
+
+      // Concedido ⇒ dejamos seguir (Splash → Home, o la ruta que sea)
+      if (perm == LocationPermState.granted) {
+        // Si el usuario intenta ir a "/" (splash) manualmente, lo mandamos a Home para no ver splash siempre
+        if (path == '/' || path.isEmpty) return '/home';
+        return null;
+      }
+
+      // No concedido / denegado para siempre / servicios off ⇒ forzar /permissions
+      if (path != '/permissions') return '/permissions';
+
+      return null;
+    },
   );
 }

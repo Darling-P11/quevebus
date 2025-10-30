@@ -36,7 +36,8 @@ dependencies:
   latlong2: ^0.9.0
   geolocator: ^12.0.0
   geocoding: ^2.2.0
-  
+  shared_preferences: ^2.2.3
+  http: ^1.2.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -74,6 +75,8 @@ flutter:
     - assets/images/
     - assets/icons/
     - lib/core/widgets/
+    - assets/bus/lines.geojson
+    - assets/bus/lines_catalog.json
 
 
   

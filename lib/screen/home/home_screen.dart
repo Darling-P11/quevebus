@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +14,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final MapController _mapCtrl = MapController();
 
@@ -22,12 +24,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Centro por defecto (Quevedo, EC aprox) por si no hay permiso/GPS
   static const LatLng _fallbackCenter = LatLng(-1.0286, -79.4594);
-  static const double _initialZoom = 14.0;
+  static const double _initialZoom = 16.0; // más cerca
+
+  // Animaciones
+  late final AnimationController _flyCtrl; // animación cámara
+  late final AnimationController _rippleCtrl; // ripple del pin
+  late final AnimationController _gpsBtnCtrl; // bounce botón GPS
+
+  // Stream de ubicación
+  StreamSubscription<Position>? _posSub;
+  bool _isFollowingCamera = true; // si true, la cámara acompaña al moverse
 
   @override
   void initState() {
     super.initState();
+    _flyCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _rippleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+    _gpsBtnCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    );
     _initLocation();
+  }
+
+  @override
+  void dispose() {
+    _flyCtrl.dispose();
+    _rippleCtrl.dispose();
+    _gpsBtnCtrl.dispose();
+    _posSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _initLocation() async {
@@ -44,6 +76,21 @@ class _HomeScreenState extends State<HomeScreen> {
             desiredAccuracy: LocationAccuracy.high,
           );
           _myLatLng = LatLng(pos.latitude, pos.longitude);
+
+          // Suscripción al movimiento — actualiza el pin automáticamente.
+          final settings = const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 5, // en metros
+          );
+          _posSub?.cancel();
+          _posSub = Geolocator.getPositionStream(locationSettings: settings)
+              .listen((p) {
+                final next = LatLng(p.latitude, p.longitude);
+                setState(() => _myLatLng = next);
+                if (_mapReady && _isFollowingCamera) {
+                  _flyTo(next, _mapCtrl.camera.zoom);
+                }
+              });
         }
       }
     } catch (_) {
@@ -56,10 +103,42 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = false);
   }
 
-  void _recenter() {
-    if (_myLatLng != null && _mapReady) {
-      _mapCtrl.move(_myLatLng!, _initialZoom);
+  /// Interpola entre centro/zoom actuales y el objetivo con easing y mueve el mapa.
+  Future<void> _flyTo(LatLng target, double targetZoom) async {
+    if (!_mapReady) return;
+
+    final camera = _mapCtrl.camera;
+    final start = camera.center;
+    final startZoom = camera.zoom;
+
+    final curve = CurvedAnimation(parent: _flyCtrl, curve: Curves.easeOutCubic);
+
+    void tick() {
+      final t = curve.value;
+      final lat = start.latitude + (target.latitude - start.latitude) * t;
+      final lon = start.longitude + (target.longitude - start.longitude) * t;
+      final z = startZoom + (targetZoom - startZoom) * t;
+      _mapCtrl.move(LatLng(lat, lon), z);
     }
+
+    late VoidCallback listener;
+    listener = () {
+      tick();
+      if (_flyCtrl.isCompleted) _flyCtrl.removeListener(listener);
+    };
+
+    _flyCtrl
+      ..reset()
+      ..addListener(listener)
+      ..forward();
+  }
+
+  Future<void> _flyToMyLocation() async {
+    if (_myLatLng == null) return;
+    HapticFeedback.selectionClick();
+    await _gpsBtnCtrl.forward();
+    await _gpsBtnCtrl.reverse();
+    await _flyTo(_myLatLng!, _initialZoom);
   }
 
   void _openDrawer() => _scaffoldKey.currentState?.openDrawer();
@@ -74,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // ======= MAPA REAL =======
+            // ======= MAPA =======
             Positioned.fill(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -84,9 +163,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         initialCenter: _myLatLng ?? _fallbackCenter,
                         initialZoom: _initialZoom,
                         onMapReady: () {
-                          _mapReady = true; // listo el mapa
+                          _mapReady = true;
                           if (_myLatLng != null) {
-                            _mapCtrl.move(_myLatLng!, _initialZoom); // ahora sí
+                            _flyTo(
+                              _myLatLng!,
+                              _initialZoom,
+                            ); // animado al iniciar
                           }
                         },
                         interactionOptions: const InteractionOptions(
@@ -108,13 +190,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             if (_myLatLng != null)
                               Marker(
                                 point: _myLatLng!,
-                                width: 42,
-                                height: 42,
-                                alignment: Alignment.topCenter,
-                                child: const Icon(
-                                  Icons.location_on_rounded,
-                                  size: 42,
-                                  color: Color(0xFF1565C0),
+                                width: 80,
+                                height: 80,
+                                alignment: Alignment.center,
+                                child: _AnimatedUserPin(
+                                  color: const Color(0xFF1565C0),
+                                  controller: _rippleCtrl,
                                 ),
                               ),
                           ],
@@ -123,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
 
-            // ======= BOTONES SUPERIORES (iconos default) =======
+            // ======= BOTONES SUPERIORES (restaurados) =======
             Positioned(
               left: 12,
               top: 12,
@@ -133,17 +214,37 @@ class _HomeScreenState extends State<HomeScreen> {
               right: 76,
               top: 12,
               child: _roundButton(cs.primary, Icons.help_outline, () {
-                // Prototipo: aquí podrías abrir /menu/support si quieres
                 // context.go('/menu/support');
               }),
             ),
             Positioned(
               right: 12,
               top: 12,
-              child: _roundButton(
-                cs.primary,
-                Icons.near_me_rounded,
-                _recenter, // recentra el mapa
+              child: ScaleTransition(
+                scale: Tween(begin: 1.0, end: 1.12).animate(
+                  CurvedAnimation(
+                    parent: _gpsBtnCtrl,
+                    curve: Curves.easeOutBack,
+                  ),
+                ),
+                child: _roundButton(
+                  cs.primary,
+                  Icons.near_me_rounded,
+                  _flyToMyLocation, // animado
+                  tooltip: _isFollowingCamera
+                      ? 'Centrar (seguimiento ON)'
+                      : 'Centrar',
+                  onLongPress: () {
+                    // toggle opcional de seguimiento de cámara
+                    setState(() => _isFollowingCamera = !_isFollowingCamera);
+                    final msg = _isFollowingCamera
+                        ? 'Seguimiento de cámara activado'
+                        : 'Seguimiento de cámara desactivado';
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(msg)));
+                  },
+                ),
               ),
             ),
 
@@ -209,20 +310,109 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Botón redondo azul con icono blanco
-  Widget _roundButton(Color bg, IconData icon, VoidCallback onTap) {
+  // Botón redondo azul con icono blanco (restaurado)
+  Widget _roundButton(
+    Color bg,
+    IconData icon,
+    VoidCallback onTap, {
+    String? tooltip,
+    VoidCallback? onLongPress,
+  }) {
+    final child = Padding(
+      padding: const EdgeInsets.all(14),
+      child: Icon(icon, color: Colors.white, size: 22),
+    );
+
     return Material(
       color: bg,
       shape: const CircleBorder(),
       elevation: 2,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Icon(icon, color: Colors.white, size: 22),
+      child: Tooltip(
+        message: tooltip ?? '',
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          customBorder: const CircleBorder(),
+          child: child,
         ),
       ),
+    );
+  }
+}
+
+/// Pin de usuario con “ripple” y aro blanco (sin usar ícono por defecto)
+class _AnimatedUserPin extends StatelessWidget {
+  final Color color;
+  final AnimationController controller;
+  const _AnimatedUserPin({required this.color, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (_, __) {
+        final t = controller.value; // 0..1
+        final rippleScale = 1.0 + t * 1.4;
+        final rippleOpacity = (1.0 - t).clamp(0.0, 1.0);
+
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // Ripple
+            Opacity(
+              opacity: rippleOpacity,
+              child: Transform.scale(
+                scale: rippleScale,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color.withOpacity(0.18),
+                  ),
+                ),
+              ),
+            ),
+
+            // Sombra suave
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+            ),
+
+            // Aro blanco + centro azul
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: Center(
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

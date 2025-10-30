@@ -1,0 +1,77 @@
+{
+  "linea1": {
+    "points": 39,
+    "source": "linea1.csv",
+    "format": "csv"
+  },
+  "linea10": {
+    "points": 48,
+    "source": "linea10.csv",
+    "format": "csv"
+  },
+  "linea11": {
+    "points": 36,
+    "source": "linea11.csv",
+    "format": "csv"
+  },
+  "linea12": {
+    "points": 29,
+    "source": "linea12.csv",
+    "format": "csv"
+  },
+  "linea13": {
+    "points": 24,
+    "source": "linea13.csv",
+    "format": "csv"
+  },
+  "linea14": {
+    "points": 41,
+    "source": "linea14.csv",
+    "format": "csv"
+  },
+  "linea15judic": {
+    "points": 51,
+    "source": "linea15judic.csv",
+    "format": "csv"
+  },
+  "linea2": {
+    "points": 39,
+    "source": "linea2.csv",
+    "format": "csv"
+  },
+  "linea3": {
+    "points": 34,
+    "source": "linea3.csv",
+    "format": "csv"
+  },
+  "linea4": {
+    "points": 24,
+    "source": "linea4.csv",
+    "format": "csv"
+  },
+  "linea5": {
+    "points": 43,
+    "source": "linea5.csv",
+    "format": "csv"
+  },
+  "linea6": {
+    "points": 35,
+    "source": "linea6.csv",
+    "format": "csv"
+  },
+  "linea7": {
+    "points": 27,
+    "source": "linea7.csv",
+    "format": "csv"
+  },
+  "linea8": {
+    "points": 16,
+    "source": "linea8.csv",
+    "format": "csv"
+  },
+  "linea9": {
+    "points": 27,
+    "source": "linea9.csv",
+    "format": "csv"
+  }
+}
