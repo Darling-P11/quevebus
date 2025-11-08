@@ -213,8 +213,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Positioned(
               right: 76,
               top: 12,
-              child: _roundButton(cs.primary, Icons.help_outline, () {
-                // context.go('/menu/support');
+              child: _roundButton(cs.primary, Icons.directions_bus, () {
+                context.go('/menu/lines-test');
               }),
             ),
             Positioned(

@@ -51,7 +51,7 @@ class AppSideDrawer extends StatelessWidget {
             // 👇 NUEVO: Test de líneas
             _ItemTile(
               icon: Icons.alt_route,
-              text: 'Test de líneas (preview)',
+              text: 'Rutas de buses',
               onTap: () => context.go('/menu/lines-test'),
             ),
 
