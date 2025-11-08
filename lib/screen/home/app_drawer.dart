@@ -1,3 +1,4 @@
+// lib/screen/home/app_drawer.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,7 +16,7 @@ class AppSideDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // Banner superior (solo logo)
+            // Banner
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -26,9 +27,7 @@ class AppSideDrawer extends StatelessWidget {
                 ),
               ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // usa tu logo
                   Image.asset(
                     'assets/images/logo_quevebus.png',
                     width: 84,
@@ -47,10 +46,15 @@ class AppSideDrawer extends StatelessWidget {
                 ],
               ),
             ),
-
             const SizedBox(height: 8),
 
-            // Opciones
+            // 👇 NUEVO: Test de líneas
+            _ItemTile(
+              icon: Icons.alt_route,
+              text: 'Test de líneas (preview)',
+              onTap: () => context.go('/menu/lines-test'),
+            ),
+
             _ItemTile(
               icon: Icons.verified_user_outlined,
               text: 'Permisos',

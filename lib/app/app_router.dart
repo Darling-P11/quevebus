@@ -16,6 +16,14 @@ import 'package:quevebus/screen/menu/about_screen.dart';
 
 // ⬇️ Servicio para chequear el permiso real del SO
 import 'package:quevebus/core/services/permissions_service.dart';
+import 'package:quevebus/screen/lines/lines_test_screen.dart';
+import 'package:quevebus/screen/lines/line_preview_screen.dart';
+import 'package:quevebus/core/services/lines_repository.dart'
+    show BusLine; // para el cast del extra
+// imports nuevos
+import 'package:quevebus/screen/lines/lines_test_screen.dart';
+import 'package:quevebus/screen/lines/line_preview_screen.dart';
+import 'package:quevebus/core/services/lines_repository.dart'; // para BusLine
 
 GoRouter buildRouter() {
   return GoRouter(
@@ -58,16 +66,16 @@ GoRouter buildRouter() {
       ),
 
       // Resultados (acepta lat/lon por query params)
-      GoRoute(
-        path: '/results',
-        name: 'results',
-        builder: (ctx, st) {
-          final qp = st.uri.queryParameters;
-          final dlat = double.tryParse(qp['lat'] ?? '');
-          final dlon = double.tryParse(qp['lon'] ?? '');
-          return RoutesResultScreen(destLat: dlat, destLon: dlon);
-        },
-      ),
+      //GoRoute(
+      // path: '/results',
+      // name: 'results',
+      // builder: (context, state) {
+      //   final qp = state.uri.queryParameters;
+      //   final lat = double.tryParse(qp['lat'] ?? '');
+      //  final lon = double.tryParse(qp['lon'] ?? '');
+      //return RoutesResultScreen(destLat: lat, destLon: lon);
+      // },
+      //),
 
       // Itinerario (detalle)
       GoRoute(
@@ -103,6 +111,24 @@ GoRouter buildRouter() {
         path: '/menu/about',
         name: 'menuAbout',
         builder: (_, __) => const AboutScreen(),
+      ),
+
+      // Test de líneas
+      GoRoute(
+        path: '/menu/lines-test',
+        name: 'linesTest',
+        builder: (_, __) => const LinesTestScreen(),
+      ),
+
+      // Preview de una línea
+      GoRoute(
+        path: '/line-preview',
+        name: 'linePreview',
+        builder: (ctx, st) {
+          final extra = st.extra;
+          if (extra is BusLine) return LinePreviewScreen(line: extra);
+          return const Scaffold(body: Center(child: Text('Línea no recibida')));
+        },
       ),
     ],
 
