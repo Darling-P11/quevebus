@@ -21,8 +21,6 @@ import 'package:quevebus/screen/lines/line_preview_screen.dart';
 import 'package:quevebus/core/services/lines_repository.dart'
     show BusLine; // para el cast del extra
 // imports nuevos
-import 'package:quevebus/screen/lines/lines_test_screen.dart';
-import 'package:quevebus/screen/lines/line_preview_screen.dart';
 import 'package:quevebus/core/services/lines_repository.dart'; // para BusLine
 
 GoRouter buildRouter() {
@@ -128,6 +126,16 @@ GoRouter buildRouter() {
           final extra = st.extra;
           if (extra is BusLine) return LinePreviewScreen(line: extra);
           return const Scaffold(body: Center(child: Text('Línea no recibida')));
+        },
+      ),
+      GoRoute(
+        path: '/results',
+        name: 'results',
+        builder: (context, state) {
+          final q = state.uri.queryParameters;
+          final lat = double.tryParse(q['lat'] ?? '');
+          final lon = double.tryParse(q['lon'] ?? '');
+          return RoutesResultScreen(destLat: lat, destLon: lon);
         },
       ),
     ],
