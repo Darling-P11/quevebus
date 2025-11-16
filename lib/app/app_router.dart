@@ -23,6 +23,9 @@ import 'package:quevebus/core/services/lines_repository.dart'
 // imports nuevos
 import 'package:quevebus/core/services/lines_repository.dart'; // para BusLine
 
+import 'package:quevebus/core/services/itinerary_engine.dart';
+import 'package:quevebus/screen/itinerary/TravelScreen.dart';
+
 GoRouter buildRouter() {
   return GoRouter(
     // Iniciamos en "/" (SplashScreen). El redirect decidirá a dónde ir.
@@ -81,6 +84,15 @@ GoRouter buildRouter() {
         name: 'itineraryDetail',
         builder: (_, st) =>
             ItineraryDetailScreen(itineraryId: st.pathParameters['id'] ?? '1'),
+      ),
+
+      GoRoute(
+        path: '/travel',
+        name: 'travel',
+        builder: (context, state) {
+          final option = state.extra as ItineraryOption;
+          return TravelScreen(option: option);
+        },
       ),
 
       // Menú: Ajustes de permisos

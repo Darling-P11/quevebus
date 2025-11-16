@@ -261,6 +261,13 @@ class _RoutesResultScreenState extends State<RoutesResultScreen> {
                         setState(() => _selected = i);
                         _focusOption(_options[i]);
                       },
+                      onStartTrip: (i) {
+                        final op = _options[i];
+
+                        // 👇 Ahora usamos /travel
+                        context.push('/travel', extra: op);
+                      },
+
                       scrollController: scrollCtrl,
                     );
                   },
@@ -322,12 +329,22 @@ class _ItineraryLayer extends StatelessWidget {
           ),
         );
 
-        // Pines de paradas (subida/bajada/trasbordo)
+        // Pines grandes de subida/bajada/trasbordo
         if (leg.boardStop != null) {
           markers.add(_stopMarker(leg.boardStop!));
         }
         if (leg.alightStop != null) {
           markers.add(_stopMarker(leg.alightStop!));
+        }
+
+        // 👇 TODAS las paradas intermedias de esta línea
+        for (final st in leg.stops) {
+          // evitamos duplicar el icono grande de subida/bajada
+          if (st.index == leg.boardStop?.index ||
+              st.index == leg.alightStop?.index) {
+            continue;
+          }
+          markers.add(_smallStopMarker(st));
         }
       }
     }
@@ -344,6 +361,40 @@ class _ItineraryLayer extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Marcador pequeño para cada parada intermedia de la línea
+Marker _smallStopMarker(ItineraryStop stop) {
+  return Marker(
+    point: stop.point,
+    width: 26,
+    height: 26,
+    child: Builder(
+      builder: (ctx) => GestureDetector(
+        onTap: () {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Línea ${stop.lineId} • Parada #${stop.index}'
+                '${stop.isTransfer ? " (Trasbordo)" : ""}',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        },
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6)],
+          ),
+          child: Center(
+            child: Icon(Icons.circle, size: 10, color: Colors.blue.shade700),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 Marker _stopMarker(ItineraryStop stop) {
@@ -380,10 +431,13 @@ Marker _stopMarker(ItineraryStop stop) {
 class _OptionsSheet extends StatelessWidget {
   final List<ItineraryOption> options;
   final ValueChanged<int> onSelect;
+  final ValueChanged<int> onStartTrip; // 👈 NUEVO
   final ScrollController? scrollController;
+
   const _OptionsSheet({
     required this.options,
     required this.onSelect,
+    required this.onStartTrip,
     this.scrollController,
   });
 
@@ -443,7 +497,9 @@ class _OptionsSheet extends StatelessWidget {
 
                   return InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () => onSelect(i),
+                    onTap: () => onSelect(
+                      i,
+                    ), // tap en la tarjeta => enfoca ruta en el mapa
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -459,11 +515,15 @@ class _OptionsSheet extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor: Colors.blue.shade600,
-                            foregroundColor: Colors.white,
-                            child: const Icon(Icons.directions_bus_rounded),
+                          // 👇 Icono de "Iniciar viaje"
+                          GestureDetector(
+                            onTap: () => onStartTrip(i),
+                            child: CircleAvatar(
+                              radius: 22,
+                              backgroundColor: Colors.blue.shade700,
+                              foregroundColor: Colors.white,
+                              child: const Icon(Icons.directions),
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(

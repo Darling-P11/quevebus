@@ -21,9 +21,12 @@ class ItineraryStop {
 class ItineraryLeg {
   final String mode; // walk | bus
   final String? lineId; // si mode = bus
-  final List<LatLng> points; // polyline
+  final List<LatLng> points; // polyline ruteada por calles
   final ItineraryStop? boardStop; // parada de subida (si bus)
   final ItineraryStop? alightStop; // parada de bajada (si bus)
+
+  /// TODAS las paradas reales (points del CSV) que recorre este tramo de bus.
+  final List<ItineraryStop> stops;
 
   ItineraryLeg({
     required this.mode,
@@ -31,6 +34,7 @@ class ItineraryLeg {
     required this.points,
     this.boardStop,
     this.alightStop,
+    this.stops = const [],
   });
 }
 
@@ -205,14 +209,26 @@ class ItineraryEngine {
           boardStop.point,
         ]);
 
-        // 🚌 Tramo en bus:
-        // usamos el orden original de la línea (subsegmento),
-        // pero cada salto se ajusta a las calles.
+        // 🚌 Tramo en bus (geometría ruteada por calles)
         final busPoints = await _routeBusSegmentAlongStreets(
           l,
           nsO.index,
           nsD.index,
         );
+
+        // 👉 TODAS las paradas reales entre nsO y nsD
+        final flat = _flattenSegments(l);
+        final segmentStops = <ItineraryStop>[];
+        for (int i = nsO.index; i <= nsD.index && i < flat.length; i++) {
+          segmentStops.add(
+            ItineraryStop(
+              point: flat[i],
+              lineId: l.id,
+              index: i,
+              isTransfer: false,
+            ),
+          );
+        }
 
         // Caminata desde la parada de bajada hasta el destino
         final walk2 = await StreetRouter.instance.routeByStreets([
@@ -232,6 +248,7 @@ class ItineraryEngine {
                 points: busPoints,
                 boardStop: boardStop,
                 alightStop: alightStop,
+                stops: segmentStops, // 👈 AQUÍ van todas las paradas del tramo
               ),
               if (walk2.isNotEmpty) ItineraryLeg(mode: 'walk', points: walk2),
             ],
@@ -242,6 +259,9 @@ class ItineraryEngine {
       }
     }
 
+    // =========================
+    // 2) Opciones con DOS líneas (un trasbordo)
+    // =========================
     // =========================
     // 2) Opciones con DOS líneas (un trasbordo)
     // =========================
@@ -317,6 +337,34 @@ class ItineraryEngine {
           destination,
         ]);
 
+        // 👉 stops reales del tramo A
+        final flatA = _flattenSegments(a);
+        final segmentStopsA = <ItineraryStop>[];
+        for (int k = ao.index; k <= an.index && k < flatA.length; k++) {
+          segmentStopsA.add(
+            ItineraryStop(
+              point: flatA[k],
+              lineId: a.id,
+              index: k,
+              isTransfer: k == an.index, // en el nodo se hace trasbordo
+            ),
+          );
+        }
+
+        // 👉 stops reales del tramo B
+        final flatB = _flattenSegments(b);
+        final segmentStopsB = <ItineraryStop>[];
+        for (int k = bn.index; k <= bd.index && k < flatB.length; k++) {
+          segmentStopsB.add(
+            ItineraryStop(
+              point: flatB[k],
+              lineId: b.id,
+              index: k,
+              isTransfer: k == bn.index, // aquí se sube al B
+            ),
+          );
+        }
+
         if (busA.isEmpty || busB.isEmpty) continue;
 
         options.add(
@@ -329,6 +377,7 @@ class ItineraryEngine {
                 points: busA,
                 boardStop: stopAO,
                 alightStop: stopAN,
+                stops: segmentStopsA, // 👈 todas las paradas del tramo A
               ),
               if (walkX.isNotEmpty) ItineraryLeg(mode: 'walk', points: walkX),
               ItineraryLeg(
@@ -337,6 +386,7 @@ class ItineraryEngine {
                 points: busB,
                 boardStop: stopBN,
                 alightStop: stopBD,
+                stops: segmentStopsB, // 👈 todas las paradas del tramo B
               ),
               if (walk2.isNotEmpty) ItineraryLeg(mode: 'walk', points: walk2),
             ],
