@@ -1,19 +1,35 @@
-// lib/core/services/lines_repository.dart
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:latlong2/latlong.dart';
 
+/// Punto de una línea, con el "Point" del CSV y su coordenada.
+class BusLinePoint {
+  final int point; // valor de la columna Point en el CSV
+  final LatLng coord; // lat/lon
+
+  const BusLinePoint({required this.point, required this.coord});
+}
+
 class BusLine {
   final String id;
   final String? name;
+
+  /// Geometría principal en segmentos (como ya la usas en el mapa).
   final List<List<LatLng>> segments; // siempre 1 segmento en CSV
-  final List<LatLng> stops; // opcional (por ahora vacío o start/end)
+
+  /// Paradas (por ahora inicio/fin, luego tus paradas reales).
+  final List<LatLng> stops;
+
+  /// Geometría "plana" con el Point original del CSV.
+  /// Útil para tests, depuración y para saber qué point es cada coord.
+  final List<BusLinePoint> geometry;
 
   BusLine({
     required this.id,
     this.name,
     required this.segments,
     this.stops = const [],
+    required this.geometry,
   });
 }
 
@@ -54,7 +70,6 @@ class LinesRepository {
         } // salta header
 
         // Extrae tokens (permitimos comillas, espacios, etc.)
-        // Quedarnos con los 3 primeros números de la fila.
         final numTokens = RegExp(
           r'[-+]?\d+(\.\d+)?',
         ).allMatches(row).map((m) => m.group(0)!).toList();
@@ -72,10 +87,16 @@ class LinesRepository {
       // 4) Ordenar por Point (1,2,3,...)
       points.sort((a, b) => a.point.compareTo(b.point));
 
-      // 5) Construir el segmento en orden
-      final segment = <LatLng>[for (final p in points) LatLng(p.lat, p.lon)];
+      // 5) Construir geometría con Point + LatLng
+      final geometry = <BusLinePoint>[
+        for (final p in points)
+          BusLinePoint(point: p.point, coord: LatLng(p.lat, p.lon)),
+      ];
 
-      // 6) Paradas provisionales: inicio y fin (hasta integrar tus paradas reales)
+      // 6) Segmento en orden (como ya lo venías usando)
+      final segment = <LatLng>[for (final gp in geometry) gp.coord];
+
+      // 7) Paradas provisionales: inicio y fin
       final stops = <LatLng>[];
       if (segment.isNotEmpty) {
         stops.add(segment.first);
@@ -88,6 +109,7 @@ class LinesRepository {
           name: lineId, // o un display name si luego lo agregas al catálogo
           segments: [segment],
           stops: stops,
+          geometry: geometry,
         ),
       );
     }

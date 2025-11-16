@@ -1,4 +1,3 @@
-// lib/screen/results/routes_result_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -196,6 +195,8 @@ class _RoutesResultScreenState extends State<RoutesResultScreen> {
             ],
           ),
 
+          const Positioned(top: 80, right: 12, child: _LegendWidget()),
+
           // =================== ESTADO / ERRORES ===================
           if (_loading)
             const Positioned.fill(
@@ -294,37 +295,46 @@ class _ItineraryLayer extends StatelessWidget {
       if (leg.points.isEmpty) continue;
 
       if (leg.mode == 'walk') {
-        // Caminata: punteado hasta la parada (y en trasbordos)
+        /// Caminata → estilo punteado elegante
         polylines.add(
           Polyline(
             points: leg.points,
             strokeWidth: 4,
-            color: Colors.grey.shade700.withOpacity(.9),
-            isDotted: true, // 👈 punteado
+            color: Colors.grey.shade700,
+            isDotted: true,
           ),
         );
       } else {
-        // Bus: ruta definida de la línea entre board y alight
+        /// 🚌 Estilo Google Maps: LÍNEA + HALO
+        polylines.add(
+          Polyline(
+            points: leg.points,
+            strokeWidth: 12,
+            color: Colors.blue.shade200.withOpacity(.35), // HALO
+          ),
+        );
         polylines.add(
           Polyline(
             points: leg.points,
             strokeWidth: 6,
-            color: const Color(0xFF0D47A1),
+            color: Colors.blue.shade600,
+            strokeCap: StrokeCap.round,
           ),
         );
-        // Pines de subida/bajada
+
+        // Pines de paradas (subida/bajada/trasbordo)
         if (leg.boardStop != null) {
-          markers.add(_busStop(leg.boardStop!, Colors.blue));
+          markers.add(_stopMarker(leg.boardStop!));
         }
         if (leg.alightStop != null) {
-          markers.add(_busStop(leg.alightStop!, Colors.red));
+          markers.add(_stopMarker(leg.alightStop!));
         }
       }
     }
 
-    // Paradas adicionales (por ejemplo nodos de transbordo)
+    // Paradas adicionales (trasbordos interlíneas)
     for (final s in option.allStops) {
-      markers.add(_busStop(s, Colors.red));
+      markers.add(_stopMarker(s));
     }
 
     return Stack(
@@ -334,24 +344,34 @@ class _ItineraryLayer extends StatelessWidget {
       ],
     );
   }
+}
 
-  Marker _busStop(LatLng p, Color color) => Marker(
-    point: p,
-    width: 24,
-    height: 24,
+Marker _stopMarker(ItineraryStop stop) {
+  late Color color;
+  late IconData icon;
+
+  if (stop.isTransfer) {
+    color = Colors.deepPurple;
+    icon = Icons.compare_arrows_rounded;
+  } else if (stop.index < 4) {
+    color = Colors.green;
+    icon = Icons.arrow_upward_rounded;
+  } else {
+    color = Colors.red;
+    icon = Icons.arrow_downward_rounded;
+  }
+
+  return Marker(
+    point: stop.point,
+    width: 42,
+    height: 42,
     child: Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6)],
+        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
       ),
-      child: Center(
-        child: Icon(
-          Icons.directions_bus_filled_rounded,
-          size: 14,
-          color: color,
-        ),
-      ),
+      child: Center(child: Icon(icon, size: 22, color: color)),
     ),
   );
 }
@@ -370,59 +390,110 @@ class _OptionsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return Container(
       decoration: BoxDecoration(
         color: cs.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 18)],
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 20,
+            offset: Offset(0, -3),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
       child: Column(
         children: [
           Container(
-            width: 44,
-            height: 5,
+            width: 50,
+            height: 6,
             decoration: BoxDecoration(
               color: Colors.black26,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(40),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+
           if (options.isEmpty)
             const Padding(
               padding: EdgeInsets.all(12),
               child: Text(
-                'No se encontraron combinaciones de líneas cercanas.',
+                'No se encontraron opciones cercanas.',
+                style: TextStyle(fontSize: 16),
               ),
             ),
+
           if (options.isNotEmpty)
             Expanded(
               child: ListView.separated(
                 controller: scrollController,
                 itemCount: options.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (_, i) {
                   final op = options[i];
-                  final lines = op.lines.join('  ›  ');
+                  final lines = op.lines.join(" → ");
                   final legs = op.legs
-                      .map((l) => l.mode == 'walk' ? '🚶' : '🚌 ${l.lineId}')
+                      .map(
+                        (l) =>
+                            l.mode == 'walk' ? 'Caminata' : 'Línea ${l.lineId}',
+                      )
                       .join('  •  ');
-                  return Card(
-                    child: ListTile(
-                      onTap: () => onSelect(i),
-                      leading: CircleAvatar(
-                        backgroundColor: cs.primary,
-                        foregroundColor: cs.onPrimary,
-                        child: const Icon(Icons.directions_bus_rounded),
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => onSelect(i),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceBright,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
-                      title: Text(
-                        lines,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text(legs),
-                      trailing: FilledButton.tonal(
-                        onPressed: () => onSelect(i),
-                        child: const Text('Detalles'),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundColor: Colors.blue.shade600,
+                            foregroundColor: Colors.white,
+                            child: const Icon(Icons.directions_bus_rounded),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  lines,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  legs,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 18,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -431,6 +502,64 @@ class _OptionsSheet extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _LegendWidget extends StatelessWidget {
+  const _LegendWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 6,
+      color: Colors.white.withOpacity(.95),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _row(Icons.arrow_upward_rounded, Colors.green, "Subida"),
+            _row(Icons.arrow_downward_rounded, Colors.red, "Bajada"),
+            _row(Icons.compare_arrows_rounded, Colors.deepPurple, "Trasbordo"),
+            _row(Icons.directions_walk_rounded, Colors.grey, "Caminata"),
+            const SizedBox(height: 6),
+            _lineBox(Colors.blue.shade600, "Ruta del bus"),
+            _lineBox(Colors.blue.shade200, "Halo de ruta"),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(IconData icon, Color c, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(icon, color: c, size: 18),
+          const SizedBox(width: 8),
+          Text(text, style: const TextStyle(fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _lineBox(Color c, String text) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 4,
+          decoration: BoxDecoration(
+            color: c,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(text, style: const TextStyle(fontSize: 12)),
+      ],
     );
   }
 }

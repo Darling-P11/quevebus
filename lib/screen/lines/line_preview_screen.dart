@@ -24,6 +24,7 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
   List<List<LatLng>> _segments = const [];
   List<LatLng> _allPoints = const [];
   List<LatLng> _stops = const [];
+  List<BusLinePoint> _geometry = const []; // geometry con Point del CSV
 
   List<LatLng> _streetPolyline = const [];
   bool _streetLoading = true;
@@ -51,6 +52,9 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
     _allPoints = merged;
     _stops =
         merged; // todas las coordenadas son paradas (inicio/fin se diferencian por icono)
+
+    // geometry con Point del CSV, para saber qué punto es cada parada
+    _geometry = line.geometry;
   }
 
   Future<void> _buildStreetPolyline() async {
@@ -89,7 +93,7 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
     );
   }
 
-  // ===== Helpers visuales =====
+  // ===== Helpers visuales / de parada =====
   List<LatLng> _sampledStops() {
     if (!_showStops) return const [];
     if (_stops.length <= 2) return _stops;
@@ -112,6 +116,30 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
     if (out.isEmpty || out.first != _stops.first) out.insert(0, _stops.first);
     if (out.last != _stops.last) out.add(_stops.last);
     return out;
+  }
+
+  // Busca el BusLinePoint (con Point del CSV) que coincide con esta coord
+  BusLinePoint? _findPoint(LatLng p) {
+    try {
+      return _geometry.firstWhere(
+        (g) =>
+            g.coord.latitude == p.latitude && g.coord.longitude == p.longitude,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _showStopInfo(BuildContext context, LatLng p) {
+    final gp = _findPoint(p);
+    final pointStr = gp != null ? gp.point.toString() : '?';
+    final lineId = widget.line.id;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Línea $lineId · Point $pointStr'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   double _bearingRad(LatLng a, LatLng b) {
@@ -147,8 +175,6 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
               Icons.navigation,
               size: 22,
               color: color.withOpacity(.95),
-              
-              
             ),
           ),
         ),
@@ -284,29 +310,37 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
                     final mk = <Marker>[];
 
                     if (_allPoints.isNotEmpty) {
+                      final pFirst = _allPoints.first;
                       mk.add(
                         Marker(
-                          point: _allPoints.first,
+                          point: pFirst,
                           width: 44,
                           height: 44,
                           alignment: Alignment.center,
-                          child: _roundIcon(
-                            icon: Icons.flag_rounded,
-                            color: Colors.green.shade700,
+                          child: GestureDetector(
+                            onTap: () => _showStopInfo(context, pFirst),
+                            child: _roundIcon(
+                              icon: Icons.flag_rounded,
+                              color: Colors.green.shade700,
+                            ),
                           ),
                         ),
                       );
                     }
                     if (_allPoints.length > 1) {
+                      final pLast = _allPoints.last;
                       mk.add(
                         Marker(
-                          point: _allPoints.last,
+                          point: pLast,
                           width: 44,
                           height: 44,
                           alignment: Alignment.center,
-                          child: _roundIcon(
-                            icon: Icons.flag_outlined,
-                            color: Colors.red.shade700,
+                          child: GestureDetector(
+                            onTap: () => _showStopInfo(context, pLast),
+                            child: _roundIcon(
+                              icon: Icons.flag_outlined,
+                              color: Colors.red.shade700,
+                            ),
                           ),
                         ),
                       );
@@ -314,19 +348,23 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
 
                     final sampled = _sampledStops();
                     for (final p in sampled) {
-                      if (p == _allPoints.first || p == _allPoints.last)
+                      if (p == _allPoints.first || p == _allPoints.last) {
                         continue;
+                      }
                       mk.add(
                         Marker(
                           point: p,
                           width: 36,
                           height: 36,
                           alignment: Alignment.center,
-                          child: _roundIcon(
-                            icon: Icons.directions_bus, // icono nativo
-                            color: cs.tertiary,
-                            size: 20,
-                            pad: 5,
+                          child: GestureDetector(
+                            onTap: () => _showStopInfo(context, p),
+                            child: _roundIcon(
+                              icon: Icons.directions_bus, // icono nativo
+                              color: cs.tertiary,
+                              size: 20,
+                              pad: 5,
+                            ),
                           ),
                         ),
                       );
@@ -336,7 +374,6 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
                 ),
 
               // Regla de escala discreta
-              // Regla de escala (custom, sin paquetes)
               Positioned(
                 left: 12,
                 bottom: 160,
@@ -369,8 +406,6 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
               ],
             ),
           ),
-
-          
 
           // Estado del ruteo (glass)
           if (_streetLoading)
@@ -611,7 +646,7 @@ class _SimpleScaleBar extends StatelessWidget {
     final px = (nice / mpp).clamp(40.0, 160.0); // ancho final en px
     final label = (nice >= 1000)
         ? '${(nice / 1000).toStringAsFixed(nice >= 5000 ? 0 : 1)} km'
-        : '${nice.toStringAsFixed(nice >= 100 ? 0 : 0)} m';
+        : '${nice.toStringAsFixed(0)} m';
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
