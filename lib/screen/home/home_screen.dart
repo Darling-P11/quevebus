@@ -35,6 +35,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   StreamSubscription<Position>? _posSub;
   bool _isFollowingCamera = true; // si true, la cámara acompaña al moverse
 
+  // Estado de error / fallback
+  String? _errorMsg;
+  bool _usingFallback = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,9 +73,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         perm = await Geolocator.requestPermission();
       }
 
-      if (perm == LocationPermission.always ||
-          perm == LocationPermission.whileInUse) {
-        if (await Geolocator.isLocationServiceEnabled()) {
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        _errorMsg =
+            'No se pudo acceder a tu ubicación. Revisa los permisos en la configuración del dispositivo.';
+      } else {
+        final serviceOn = await Geolocator.isLocationServiceEnabled();
+        if (!serviceOn) {
+          _errorMsg =
+              'El GPS está desactivado. Actívalo para usar tu ubicación actual.';
+        } else {
           final pos = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
           );
@@ -94,10 +105,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
       }
     } catch (_) {
-      // ignora: usaremos fallback
+      _errorMsg = 'Ocurrió un problema al obtener tu ubicación.';
     }
 
-    _myLatLng ??= _fallbackCenter;
+    // Si no se logró obtener ubicación real, usar fallback
+    if (_myLatLng == null) {
+      _myLatLng = _fallbackCenter;
+      _usingFallback = true;
+    }
 
     if (!mounted) return;
     setState(() => _loading = false);
@@ -124,7 +139,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     late VoidCallback listener;
     listener = () {
       tick();
-      if (_flyCtrl.isCompleted) _flyCtrl.removeListener(listener);
+      if (_flyCtrl.isCompleted) {
+        _flyCtrl.removeListener(listener);
+      }
     };
 
     _flyCtrl
@@ -142,6 +159,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _openDrawer() => _scaffoldKey.currentState?.openDrawer();
+
+  Future<void> _openLocationSettings() async {
+    await Geolocator.openLocationSettings();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +198,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               InteractiveFlag.pinchZoom |
                               InteractiveFlag.doubleTapZoom,
                         ),
+                        // Cuando el usuario mueve/zoomea el mapa, desactivamos el seguimiento
+                        onMapEvent: (event) {
+                          if (event.source != MapEventSource.mapController &&
+                              _isFollowingCamera &&
+                              (event is MapEventMoveStart ||
+                                  event is MapEventMove ||
+                                  event is MapEventFlingAnimation)) {
+                            setState(() => _isFollowingCamera = false);
+                          }
+                        },
                       ),
                       children: [
                         TileLayer(
@@ -204,7 +235,45 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
             ),
 
-            // ======= BOTONES SUPERIORES (restaurados) =======
+            // ======= BANNER DE ERROR / FALLBACK =======
+            if (_errorMsg != null && _usingFallback)
+              Positioned(
+                top: 8,
+                left: 12,
+                right: 12,
+                child: Material(
+                  elevation: 3,
+                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.white.withOpacity(0.95),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_off, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMsg!,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _openLocationSettings,
+                          child: const Text(
+                            'Configurar',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ======= BOTONES SUPERIORES =======
             Positioned(
               left: 12,
               top: 12,
@@ -230,12 +299,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: _roundButton(
                   cs.primary,
                   Icons.near_me_rounded,
-                  _flyToMyLocation, // animado
+                  _flyToMyLocation,
                   tooltip: _isFollowingCamera
                       ? 'Centrar (seguimiento ON)'
                       : 'Centrar',
                   onLongPress: () {
-                    // toggle opcional de seguimiento de cámara
+                    // toggle de seguimiento de cámara
                     setState(() => _isFollowingCamera = !_isFollowingCamera);
                     final msg = _isFollowingCamera
                         ? 'Seguimiento de cámara activado'
@@ -244,6 +313,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       context,
                     ).showSnackBar(SnackBar(content: Text(msg)));
                   },
+                ),
+              ),
+            ),
+
+            // ======= CHIP ESTADO SEGUIMIENTO =======
+            Positioned(
+              left: 12,
+              bottom: 90,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: 1.0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isFollowingCamera
+                            ? Icons.my_location
+                            : Icons.pan_tool_alt_rounded,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isFollowingCamera
+                            ? 'Siguiendo tu ubicación'
+                            : 'Mapa libre',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -310,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // Botón redondo azul con icono blanco (restaurado)
+  // Botón redondo azul con icono blanco
   Widget _roundButton(
     Color bg,
     IconData icon,

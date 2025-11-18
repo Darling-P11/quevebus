@@ -115,166 +115,210 @@ class _RoutesResultScreenState extends State<RoutesResultScreen> {
     );
   }
 
+  /// Diálogo de confirmación antes de salir de esta pantalla
+  Future<bool> _confirmExit() async {
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Salir de las sugerencias?'),
+        content: const Text(
+          'Si regresas, se perderán las rutas calculadas para este viaje.\n\n'
+          '¿Deseas volver a la pantalla anterior?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sí, salir'),
+          ),
+        ],
+      ),
+    );
+    return res ?? false;
+  }
+
+  /// Para el botón de la AppBar
+  Future<void> _handleBackPressed() async {
+    final ok = await _confirmExit();
+    if (!ok) return;
+
+    if (Navigator.of(context).canPop()) {
+      context.pop();
+    } else {
+      context.go('/');
+    }
+  }
+
+  /// Para el back físico de Android / gesto de sistema
+  Future<bool> _onWillPop() async {
+    final ok = await _confirmExit();
+    // true => Flutter hace el pop normal; false => se queda en la pantalla
+    return ok;
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.pop(),
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: _handleBackPressed,
+          ),
+          title: const Text('Sugerencias de viaje'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.my_location_rounded),
+              onPressed: _fitAll,
+              tooltip: 'Reencuadrar',
+            ),
+          ],
         ),
-        title: const Text('Sugerencias de viaje'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.my_location_rounded),
-            onPressed: _fitAll,
-            tooltip: 'Reencuadrar',
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          // ======================= MAPA =======================
-          FlutterMap(
-            mapController: _map,
-            options: MapOptions(
-              initialCenter: _origin ?? const LatLng(-1.0286, -79.4594),
-              initialZoom: 14,
-              interactionOptions: const InteractionOptions(
-                flags:
-                    InteractiveFlag.drag |
-                    InteractiveFlag.pinchZoom |
-                    InteractiveFlag.doubleTapZoom,
+        body: Stack(
+          children: [
+            // ======================= MAPA =======================
+            FlutterMap(
+              mapController: _map,
+              options: MapOptions(
+                initialCenter: _origin ?? const LatLng(-1.0286, -79.4594),
+                initialZoom: 14,
+                interactionOptions: const InteractionOptions(
+                  flags:
+                      InteractiveFlag.drag |
+                      InteractiveFlag.pinchZoom |
+                      InteractiveFlag.doubleTapZoom,
+                ),
               ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.quevebus',
+                  retinaMode: true,
+                ),
+
+                // Ruta O->D por calles (azul) SOLO si no hay selección
+                if (_routeOD.isNotEmpty && _selected < 0)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _routeOD,
+                        strokeWidth: 6,
+                        color: const Color(0xFF1565C0),
+                      ),
+                    ],
+                  ),
+
+                // Itinerario seleccionado: caminado punteado y buses
+                if (_selected >= 0 && _selected < _options.length)
+                  _ItineraryLayer(option: _options[_selected]),
+
+                // Marcadores O/D
+                if (_origin != null || _destination != null)
+                  MarkerLayer(
+                    markers: [
+                      if (_origin != null)
+                        Marker(
+                          point: _origin!,
+                          width: 18,
+                          height: 18,
+                          child: _dot(Colors.green.shade600),
+                        ),
+                      if (_destination != null)
+                        Marker(
+                          point: _destination!,
+                          width: 18,
+                          height: 18,
+                          child: _dot(Colors.black87),
+                        ),
+                    ],
+                  ),
+              ],
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.quevebus',
-                retinaMode: true,
-              ),
 
-              // Ruta O->D por calles (azul) SOLO si no hay selección
-              if (_routeOD.isNotEmpty && _selected < 0)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _routeOD,
-                      strokeWidth: 6,
-                      color: const Color(0xFF1565C0),
-                    ),
-                  ],
-                ),
+            const Positioned(top: 80, right: 12, child: _LegendWidget()),
 
-              // Itinerario seleccionado: caminado punteado y buses
-              if (_selected >= 0 && _selected < _options.length)
-                _ItineraryLayer(option: _options[_selected]),
-
-              // Marcadores O/D
-              if (_origin != null || _destination != null)
-                MarkerLayer(
-                  markers: [
-                    if (_origin != null)
-                      Marker(
-                        point: _origin!,
-                        width: 18,
-                        height: 18,
-                        child: _dot(Colors.green.shade600),
-                      ),
-                    if (_destination != null)
-                      Marker(
-                        point: _destination!,
-                        width: 18,
-                        height: 18,
-                        child: _dot(Colors.black87),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-
-          const Positioned(top: 80, right: 12, child: _LegendWidget()),
-
-          // =================== ESTADO / ERRORES ===================
-          if (_loading)
-            const Positioned.fill(
-              child: IgnorePointer(
-                ignoring: true,
-                child: Center(
-                  child: Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(14),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          SizedBox(width: 10),
-                          Text('Calculando rutas…'),
-                        ],
+            // =================== ESTADO / ERRORES ===================
+            if (_loading)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: Center(
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(14),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 10),
+                            Text('Calculando rutas…'),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          if (_error != null)
-            Positioned(
-              top: 12,
-              left: 12,
-              right: 12,
-              child: Card(
-                color: cs.errorContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    'Error: $_error',
-                    style: TextStyle(color: cs.onErrorContainer),
+            if (_error != null)
+              Positioned(
+                top: 12,
+                left: 12,
+                right: 12,
+                child: Card(
+                  color: cs.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'Error: $_error',
+                      style: TextStyle(color: cs.onErrorContainer),
+                    ),
                   ),
                 ),
               ),
-            ),
 
-          // ============== BOTTOM SHEET SCROLLABLE ==============
-          if (!_loading)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              top: MediaQuery.of(context).size.height * 0.35,
-              child: SafeArea(
-                top: false,
-                child: DraggableScrollableSheet(
-                  initialChildSize: 1,
-                  minChildSize: 1,
-                  maxChildSize: 1,
-                  expand: true,
-                  builder: (ctx, scrollCtrl) {
-                    return _OptionsSheet(
-                      options: _options,
-                      onSelect: (i) {
-                        setState(() => _selected = i);
-                        _focusOption(_options[i]);
-                      },
-                      onStartTrip: (i) {
-                        final op = _options[i];
-
-                        // 👇 Ahora usamos /travel
-                        context.push('/travel', extra: op);
-                      },
-
-                      scrollController: scrollCtrl,
-                    );
-                  },
+            // ============== BOTTOM SHEET SCROLLABLE ==============
+            if (!_loading)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                top: MediaQuery.of(context).size.height * 0.35,
+                child: SafeArea(
+                  top: false,
+                  child: DraggableScrollableSheet(
+                    initialChildSize: 1,
+                    minChildSize: 1,
+                    maxChildSize: 1,
+                    expand: true,
+                    builder: (ctx, scrollCtrl) {
+                      return _OptionsSheet(
+                        options: _options,
+                        onSelect: (i) {
+                          setState(() => _selected = i);
+                          _focusOption(_options[i]);
+                        },
+                        onStartTrip: (i) {
+                          final op = _options[i];
+                          context.push('/travel', extra: op);
+                        },
+                        scrollController: scrollCtrl,
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -339,7 +383,6 @@ class _ItineraryLayer extends StatelessWidget {
 
         // 👇 TODAS las paradas intermedias de esta línea
         for (final st in leg.stops) {
-          // evitamos duplicar el icono grande de subida/bajada
           if (st.index == leg.boardStop?.index ||
               st.index == leg.alightStop?.index) {
             continue;
@@ -417,7 +460,7 @@ Marker _stopMarker(ItineraryStop stop) {
     width: 42,
     height: 42,
     child: Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
         shape: BoxShape.circle,
         boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
@@ -431,7 +474,7 @@ Marker _stopMarker(ItineraryStop stop) {
 class _OptionsSheet extends StatelessWidget {
   final List<ItineraryOption> options;
   final ValueChanged<int> onSelect;
-  final ValueChanged<int> onStartTrip; // 👈 NUEVO
+  final ValueChanged<int> onStartTrip;
   final ScrollController? scrollController;
 
   const _OptionsSheet({
@@ -497,25 +540,23 @@ class _OptionsSheet extends StatelessWidget {
 
                   return InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () => onSelect(
-                      i,
-                    ), // tap en la tarjeta => enfoca ruta en el mapa
+                    onTap: () => onSelect(i),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: cs.surfaceBright,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
+                        boxShadow: const [
                           BoxShadow(
                             color: Colors.black12,
                             blurRadius: 10,
-                            offset: const Offset(0, 3),
+                            offset: Offset(0, 3),
                           ),
                         ],
                       ),
                       child: Row(
                         children: [
-                          // 👇 Icono de "Iniciar viaje"
+                          // Icono "Iniciar viaje"
                           GestureDetector(
                             onTap: () => onStartTrip(i),
                             child: CircleAvatar(

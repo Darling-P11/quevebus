@@ -12,7 +12,7 @@ import 'package:quevebus/core/services/recents_service.dart';
 // ================= Config geocoder =================
 enum GeoProvider { geoapify, nominatim }
 
-// Pega aquí tu API key (o déjala vacía para usar Nominatim)
+// Pega aquí tu API key 
 const String GEOAPIFY_API_KEY =
     '6cf8aa5f5d2e45f0bac21790ca90c6ae'; // <- tu key o vacío
 

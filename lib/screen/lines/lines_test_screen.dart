@@ -34,24 +34,28 @@ class _LinesTestScreenState extends State<LinesTestScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.pop(),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/'); // vuelve al home si no hay nada que hacer pop
+            }
+          },
         ),
         title: const Text('Líneas de buses'),
         actions: [
           IconButton(
-            tooltip: 'Recargar',
+            tooltip: 'Recargar catálogo',
             onPressed: () => setState(() => _future = _load()),
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
-
       body: FutureBuilder<List<BusLine>>(
         future: _future,
         builder: (ctx, snap) {
@@ -59,8 +63,42 @@ class _LinesTestScreenState extends State<LinesTestScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 40,
+                      color: Colors.red,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Ocurrió un error al cargar las líneas.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${snap.error}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() => _future = _load()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
+
           final lines = _filtered(_all, _query);
           if (lines.isEmpty) {
             return _EmptyState(
@@ -70,7 +108,7 @@ class _LinesTestScreenState extends State<LinesTestScreen> {
 
           return Column(
             children: [
-              // Encabezado moderno con métricas
+              // Encabezado moderno con métricas y buscador
               _HeaderStats(
                 total: _all.length,
                 visibles: lines.length,
@@ -144,7 +182,7 @@ class _HeaderStats extends StatelessWidget {
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [cs.primary, cs.primary.withOpacity(.65)],
+          colors: [cs.primary, cs.primary.withOpacity(.7)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -155,6 +193,8 @@ class _HeaderStats extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 6),
+
             // Métricas
             Row(
               children: [
@@ -172,6 +212,7 @@ class _HeaderStats extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+
             // Búsqueda
             TextField(
               onChanged: onChanged,
@@ -206,10 +247,29 @@ class _ChipStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      avatar: Icon(icon, size: 18),
-      label: Text('$label: $value'),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(.4), width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            '$label: $value',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: cs.onPrimary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -249,7 +309,7 @@ class _LineCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(.16),
+                  color: color.withOpacity(.13),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(Icons.alt_route_rounded, color: color, size: 26),
@@ -273,7 +333,7 @@ class _LineCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
-                      runSpacing: -6,
+                      runSpacing: -4,
                       children: [
                         _pill(text: 'ID: $subtitleId'),
                         _pill(text: 'Pts: $points'),
@@ -315,23 +375,37 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.directions_bus_rounded,
-            size: 46,
-            color: Colors.black45,
-          ),
-          const SizedBox(height: 8),
-          const Text('No hay líneas cargadas'),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: onReload,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Reintentar'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.directions_bus_rounded,
+              size: 46,
+              color: Colors.black45,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'No hay líneas cargadas',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Verifica los archivos del catálogo y vuelve a intentarlo.',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onReload,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
       ),
     );
   }

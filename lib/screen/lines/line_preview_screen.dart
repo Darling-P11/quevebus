@@ -93,6 +93,15 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
     );
   }
 
+  void _handleBack() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      // Fallback lógico para esta pantalla
+      context.go('/menu/lines-test');
+    }
+  }
+
   // ===== Helpers visuales / de parada =====
   List<LatLng> _sampledStops() {
     if (!_showStops) return const [];
@@ -219,6 +228,10 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: _handleBack,
+        ),
         title: Text(title),
         actions: [
           IconButton(
@@ -433,7 +446,7 @@ class _LinePreviewScreenState extends State<LinePreviewScreen> {
             ),
             const SizedBox(width: 8),
             FilledButton.tonal(
-              onPressed: () => context.pop(),
+              onPressed: _handleBack,
               child: const Text('Cerrar'),
             ),
           ],
