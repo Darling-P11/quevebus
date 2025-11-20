@@ -65,13 +65,18 @@
     "format": "csv"
   },
   "linea8": {
-    "points": 16,
-    "source": "linea8.csv",
+    "points": 41,
+    "source": "Linea8_Full.csv",
     "format": "csv"
   },
   "linea9": {
     "points": 27,
     "source": "linea9.csv",
+    "format": "csv"
+  },
+  "linea15full": {
+    "points": 32,
+    "source": "linea15full.csv",
     "format": "csv"
   }
 }

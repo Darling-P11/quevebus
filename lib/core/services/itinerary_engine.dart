@@ -55,6 +55,8 @@ class ItineraryOption {
 
 class ItineraryEngine {
   final Distance _dist = const Distance();
+  final Map<String, List<LatLng>> _busSegmentCache =
+      {}; // 🔴 pon esto arriba en la clase
 
   // Punto más cercano de la geometría de la línea a un punto dado.
   // Devuelve el punto, su índice global dentro de la línea y la distancia.
@@ -114,46 +116,37 @@ class ItineraryEngine {
 
   /// Sigue la calle entre cada par consecutivo del subtramo de la línea.
   /// Respeta el orden de la línea, pero ajusta cada salto al StreetRouter.
+  /// Sigue la calle para el subtramo [from..to] de la línea.
+  /// Usa TODOS los puntos del subtramo como "via points" en OSRM,
+  /// para que la ruta siga el recorrido original (paradas) pero pegada al mapa.
+  /// Se hace **UNA** llamada a StreetRouter (que internamente chunquea).
+
   Future<List<LatLng>> _routeBusSegmentAlongStreets(
     BusLine line,
     int from,
     int to,
   ) async {
+    // Cache por línea + rango de índices
+    final key = '${line.id}:$from:$to';
+    final cached = _busSegmentCache[key];
+    if (cached != null) return cached;
+
+    // 1) Subtramo original (lista de paradas/puntos de la línea)
     final base = _subsegment(line, from, to);
-    if (base.length <= 1) return base;
-
-    final out = <LatLng>[];
-
-    for (int i = 0; i < base.length - 1; i++) {
-      final a = base[i];
-      final b = base[i + 1];
-
-      // El primer punto siempre se agrega
-      if (i == 0) {
-        out.add(a);
-      }
-
-      final d = _dist(a, b);
-
-      // Si están muy cerca, no vale la pena rutear, se añade directo.
-      if (d < 15) {
-        out.add(b);
-        continue;
-      }
-
-      // Ruteamos el pequeño tramo A -> B respetando las calles
-      final seg = await StreetRouter.instance.routeByStreets([a, b]);
-
-      if (seg.length <= 1) {
-        // Si no hay resultado útil, agregamos B directo
-        out.add(b);
-      } else {
-        // Evitamos repetir el punto inicial (a) porque ya está en out
-        out.addAll(seg.skip(1));
-      }
+    if (base.length <= 1) {
+      _busSegmentCache[key] = base;
+      return base;
     }
 
-    return out;
+    // 2) Llamamos UNA sola vez a StreetRouter con TODOS los puntos del subtramo.
+    //    StreetRouter.routeByStreets ya divide en chunks de 25 y arma la polilínea final.
+    final routed = await StreetRouter.instance.routeByStreets(base);
+
+    // 3) Si OSRM falla, caemos al subtramo original para no romper la opción.
+    final result = routed.isEmpty ? base : routed;
+
+    _busSegmentCache[key] = result;
+    return result;
   }
 
   // Detecta un "nodo" de transbordo entre dos líneas:
@@ -180,12 +173,40 @@ class ItineraryEngine {
   }) async {
     final options = <ItineraryOption>[];
 
+    // 🔹 Distancia máxima para considerar que una línea es "caminable"
+    const double maxBoardingDistanceMeters = 600.0;
+
+    // =========================
+    // PRE-CÁLCULOS: paradas más cercanas
+    // =========================
+    //
+    // Para no estar llamando _nearestStopInLine muchas veces,
+    // precalculamos, por cada línea:
+    //  - parada más cercana al origen
+    //  - parada más cercana al destino
+    //
+    final originNearest =
+        <BusLine, ({LatLng stop, int index, double meters})>{};
+
+    final destNearest = <BusLine, ({LatLng stop, int index, double meters})>{};
+
+    for (final l in lines) {
+      originNearest[l] = _nearestStopInLine(l, origin);
+      destNearest[l] = _nearestStopInLine(l, destination);
+    }
+
     // =========================
     // 1) Opciones de UNA sola línea
     // =========================
     for (final l in lines) {
-      final nsO = _nearestStopInLine(l, origin);
-      final nsD = _nearestStopInLine(l, destination);
+      final nsO = originNearest[l]!;
+      final nsD = destNearest[l]!;
+
+      // 🔴 Filtro de distancia: origen y destino deben estar "razonablemente" cerca
+      if (nsO.meters > maxBoardingDistanceMeters ||
+          nsD.meters > maxBoardingDistanceMeters) {
+        continue;
+      }
 
       // Aseguramos orden correcto en la geometría de la línea:
       // la parada de subida debe ir antes que la de bajada.
@@ -248,7 +269,7 @@ class ItineraryEngine {
                 points: busPoints,
                 boardStop: boardStop,
                 alightStop: alightStop,
-                stops: segmentStops, // 👈 AQUÍ van todas las paradas del tramo
+                stops: segmentStops,
               ),
               if (walk2.isNotEmpty) ItineraryLeg(mode: 'walk', points: walk2),
             ],
@@ -262,20 +283,23 @@ class ItineraryEngine {
     // =========================
     // 2) Opciones con DOS líneas (un trasbordo)
     // =========================
-    // =========================
-    // 2) Opciones con DOS líneas (un trasbordo)
-    // =========================
-    for (int i = 0; i < lines.length; i++) {
-      for (int j = i + 1; j < lines.length; j++) {
-        final a = lines[i];
+    final n = lines.length;
+    for (int i = 0; i < n; i++) {
+      final a = lines[i];
+      final ao = originNearest[a]!;
+
+      // 🔴 Línea A debe estar cerca del origen
+      if (ao.meters > maxBoardingDistanceMeters) continue;
+
+      for (int j = i + 1; j < n; j++) {
         final b = lines[j];
+        final bd = destNearest[b]!;
+
+        // 🔴 Línea B debe estar cerca del destino
+        if (bd.meters > maxBoardingDistanceMeters) continue;
 
         final node = _transferNode(a, b);
         if (node == null) continue;
-
-        // Puntos cercanos al origen y destino
-        final ao = _nearestStopInLine(a, origin);
-        final bd = _nearestStopInLine(b, destination);
 
         // Nodo proyectado en cada línea
         final an = _nearestStopInLine(a, node);
@@ -319,7 +343,7 @@ class ItineraryEngine {
           stopAO.point,
         ]);
 
-        // 🚌 Tramo en bus en la línea A: orden real A[ao.index .. an.index]
+        // 🚌 Tramo en bus en la línea A
         final busA = await _routeBusSegmentAlongStreets(a, ao.index, an.index);
 
         // Caminata de trasbordo entre la bajada de A y subida de B
@@ -328,7 +352,7 @@ class ItineraryEngine {
           stopBN.point,
         ]);
 
-        // 🚌 Tramo en bus en la línea B: orden real B[bn.index .. bd.index]
+        // 🚌 Tramo en bus en la línea B
         final busB = await _routeBusSegmentAlongStreets(b, bn.index, bd.index);
 
         // Caminata desde bajada de B hasta el destino
@@ -377,7 +401,7 @@ class ItineraryEngine {
                 points: busA,
                 boardStop: stopAO,
                 alightStop: stopAN,
-                stops: segmentStopsA, // 👈 todas las paradas del tramo A
+                stops: segmentStopsA,
               ),
               if (walkX.isNotEmpty) ItineraryLeg(mode: 'walk', points: walkX),
               ItineraryLeg(
@@ -386,7 +410,7 @@ class ItineraryEngine {
                 points: busB,
                 boardStop: stopBN,
                 alightStop: stopBD,
-                stops: segmentStopsB, // 👈 todas las paradas del tramo B
+                stops: segmentStopsB,
               ),
               if (walk2.isNotEmpty) ItineraryLeg(mode: 'walk', points: walk2),
             ],

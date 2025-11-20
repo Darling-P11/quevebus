@@ -34,8 +34,14 @@ class BusLine {
 }
 
 class LinesRepository {
+  // 🔴 Cache en memoria para no leer los CSV en cada búsqueda
+  static List<BusLine>? _cache;
+
   /// Carga las líneas desde el catálogo JSON y lee cada CSV respetando el orden por "Point".
   Future<List<BusLine>> loadFromCatalog() async {
+    // ✅ Si ya las cargamos una vez, devolvemos desde memoria
+    if (_cache != null) return _cache!;
+
     // 1) Cargar catálogo
     final catStr = await rootBundle.loadString('assets/bus/lines_catalog.json');
     final Map<String, dynamic> catalog = jsonDecode(catStr);
@@ -114,6 +120,8 @@ class LinesRepository {
       );
     }
 
+    // 🔴 Guardamos en cache para las siguientes llamadas
+    _cache = out;
     return out;
   }
 }
